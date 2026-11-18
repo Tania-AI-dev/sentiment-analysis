@@ -1,208 +1,199 @@
-# Sarcasm-Aware Sentiment Analysis with Multi-Task BERT
+# Sarcasm-Aware Sentiment Analysis Using BERT and Multi-Task Learning
 
-A two-phase NLP system for sentiment classification that goes beyond standard approaches by jointly detecting **sarcasm and irony**. Built on a custom `MultiTaskBERT` architecture with contrastive loss, trained on ~230,000 samples across three datasets.
+A two-phase NLP project exploring how contextual language models and multi-task learning can improve sentiment classification when dealing with sarcasm, irony and ambiguous language.
 
-> Developed as part of an MSc dissertation in Artificial Intelligence at Dublin Business School, supervised by Dr. David Williams.
+## Project Overview
 
----
+Traditional sentiment analysis models can struggle with expressions where the literal meaning differs from the intended sentiment. Sarcasm, irony and contemporary slang can make positive and negative language difficult to distinguish.
 
-## Problem Statement
+This project investigates these limitations through two approaches:
 
-Standard sentiment classifiers fail on pragmatic language. A model that has never encountered sarcasm will confidently label *"I just love being ignored"* as **Positive** — because the words are positive, even though the meaning is not.
+- **Phase 1:** A baseline sentiment classifier fine-tuned using `bert-base-cased`.
+- **Phase 2:** A sarcasm-aware multi-task BERT model that jointly learns sentiment and sarcasm classification, incorporating contrastive loss to improve the learned representation space.
 
-This project addresses that gap through a two-phase approach:
+The project also includes an ablation experiment to examine the contribution of contrastive learning.
 
-- **Phase 1** establishes a strong baseline by fine-tuning `bert-base-cased` on 100,000 tweets, achieving 84% validation accuracy — and exposing its weakness on sarcastic and ironic text.
-- **Phase 2** introduces a `MultiTaskBERT` model that jointly predicts sentiment and detects sarcasm using a shared BERT encoder, two task-specific classification heads, and a contrastive loss term that pushes sarcastic and sincere embeddings apart in representation space.
+## Objectives
 
----
+- Develop a BERT-based binary sentiment classification model.
+- Investigate the limitations of conventional sentiment classification on pragmatic language.
+- Extend the baseline using multi-task learning for sentiment and sarcasm detection.
+- Apply contrastive loss to the shared BERT representation.
+- Evaluate the contribution of contrastive learning through an ablation study.
 
 ## Model Architecture
 
-### Phase 1 — Baseline Sentiment Model
+### Phase 1 – Baseline BERT Sentiment Classifier
 
-- Pretrained model: `bert-base-cased`
-- Task: Binary sentiment classification (Positive / Negative)
-- Dataset: Sentiment140 (100,000 tweets sampled from 1.6M)
-- Training: 3 epochs, AdamW (lr=2e-5), batch size 16
-- Loss: CrossEntropyLoss
-- Validation accuracy: **84%**
-- Training loss: 0.40 → 0.29 → 0.18
+A pretrained `bert-base-cased` model is fine-tuned on 100,000 tweets from the Sentiment140 dataset.
 
-**Limitation identified:** The model misclassifies sarcastic text — e.g. *"Best day ever... not"* and *"I just love being ignored"* are both predicted Positive.
+**Classification categories:**
+- Positive
+- Negative
 
----
+The baseline achieved 82% accuracy on both validation and held-out test data.
 
-### Phase 2 — Sarcasm-Aware Multi-Task Model
+Qualitative testing highlighted difficulties with contemporary slang and expressions whose sentiment depends on context.
 
-A custom `MultiTaskBERT` architecture with:
+### Phase 2 – Sarcasm-Aware Multi-Task BERT
 
-- **Shared encoder:** `bert-base-cased` (frozen subword tokenisation, [CLS] token representation)
-- **Sentiment head:** Linear classifier → Positive / Negative
-- **Sarcasm head:** Linear classifier → Sarcastic / Not Sarcastic
-- **Dropout:** 0.3 applied to [CLS] output before both heads
+The baseline is extended into a multi-task architecture with:
 
-**Combined training loss:**
+- A shared BERT encoder.
+- A sentiment classification head.
+- A sarcasm classification head.
+- A contrastive loss component operating on the shared `[CLS]` embeddings.
 
-```
-total_loss = sentiment_loss + sarcasm_loss + 0.5 × contrastive_loss
-```
+Both classification tasks share the contextual representation produced by BERT, while their separate output heads learn task-specific predictions.
 
-The contrastive loss encourages the model to cluster sarcastic examples together and push them away from sincere examples in embedding space, using cosine similarity between the two heads' logit vectors.
+**Combined training objective:**
 
-**Training data:** ~230,000 rows (after upsampling sarcastic class to balance classes)
+`Total Loss = Sentiment Loss + Sarcasm Loss + 0.5 × Contrastive Loss`
 
----
+The sentiment loss ignores samples without reliable sentiment annotations using `ignore_index=-100`.
+
+### Contrastive Learning
+
+A batch-level pairwise contrastive loss is applied to the shared BERT embeddings.
+
+- Samples with the same sarcasm label are encouraged to have similar representations.
+- Samples with different sarcasm labels are penalised when their cosine similarity exceeds a margin of 0.3.
+
+This encourages the shared representation space to capture distinctions between sarcastic and non-sarcastic language.
 
 ## Datasets
 
-| Dataset | Source | Size | Labels |
-|---|---|---|---|
-| Sentiment140 | Stanford / HuggingFace | 100,000 tweets (sampled) | Positive, Negative |
-| Sarcasm News Headlines | `raquiba/Sarcasm_News_Headline` (HuggingFace) | ~26,000 headlines | Sarcastic, Not Sarcastic |
-| SemEval-2018 Twitter Irony | `cardiffnlp/tweet_eval` (irony split) | ~3,800 tweets | Ironic, Not Ironic |
-| **Combined (balanced)** | — | **~230,000 rows** | Sentiment + Sarcasm |
+The multi-task model combines three datasets:
 
-The sarcastic class was upsampled using `sklearn.utils.resample` to match the size of the non-sarcastic class before training.
-
----
-
-## Tech Stack
-
-- Python
-- PyTorch
-- HuggingFace Transformers
-- HuggingFace Datasets
-- Scikit-learn
-- Pandas
-- Google Colab (GPU runtime)
-
----
-
-## Results
-
-### Phase 1 — Baseline
-
-| Metric | Value |
+| Dataset | Purpose |
 |---|---|
-| Validation Accuracy | **84%** |
-| Training Loss (Epoch 1) | 0.40 |
-| Training Loss (Epoch 2) | 0.29 |
-| Training Loss (Epoch 3) | 0.18 |
+| Sentiment140 | Sentiment classification |
+| Sarcasm News Headlines | Sarcasm detection |
+| SemEval-2018 Twitter Irony (TweetEval) | Twitter irony detection |
 
-### Phase 2 — Multi-Task Model
+**Combined dataset:** 131,481 rows.
 
-*(Replace with your actual evaluation output from Section 2.7)*
+An important distinction in the data pipeline is that the sarcasm and irony datasets do not receive fabricated sentiment labels. Their sentiment labels are assigned a placeholder value of `-100` and excluded from sentiment loss and evaluation.
 
-**Sentiment Head:**
+### Data Preparation
 
-| Metric | Negative | Positive |
-|---|---|---|
-| Precision | XX | XX |
-| Recall | XX | XX |
-| F1 Score | XX | XX |
+- Text tokenisation using the BERT tokenizer.
+- Maximum sequence length of 128 tokens.
+- Train, validation and test split.
+- Stratification using sarcasm labels.
+- Sarcastic-class upsampling applied only to the training split.
+- Validation and test sets retain their natural class distributions.
 
-**Sarcasm Head:**
+The split is performed before upsampling to prevent duplicated samples from leaking into validation or test data.
 
-| Metric | Not Sarcastic | Sarcastic |
-|---|---|---|
-| Precision | XX | XX |
-| Recall | XX | XX |
-| F1 Score | XX | XX |
+## Experimental Results
 
----
+### Test Performance
 
-## Sample Predictions
+| Model | Sentiment Accuracy | Sarcasm Accuracy |
+|---|---:|---:|
+| Baseline BERT | 82% | — |
+| Multi-task BERT with contrastive loss | 83% | 97% |
+| Multi-task BERT without contrastive loss | 81% | 97% |
 
-### Phase 1 — Baseline Model
+### Ablation Study
 
+An ablation experiment was conducted by removing the contrastive loss term while keeping the architecture, datasets and training hyperparameters otherwise unchanged.
+
+Key observations:
+
+- Sentiment accuracy increased from 81% to 83% with contrastive loss.
+- Sarcastic-class recall increased from 0.89 to 0.92.
+- Sarcastic-class precision decreased from 0.87 to 0.84.
+- Sarcastic-class F1-score remained at 0.88.
+
+The results suggest that contrastive learning influenced the model's classification behaviour, particularly its recall for sarcastic samples.
+
+**Important:** These results are from a single-seed experiment. The observed two-percentage-point sentiment accuracy difference should not be interpreted as statistically conclusive without repeated runs and uncertainty estimates.
+
+## Technology Stack
+
+- **Programming Language:** Python
+- **Deep Learning:** PyTorch
+- **NLP / Transformers:** Hugging Face Transformers
+- **Pretrained Model:** BERT (`bert-base-cased`)
+- **Dataset Handling:** Hugging Face Datasets, Pandas, NumPy
+- **Machine Learning Utilities:** Scikit-learn
+- **Environment:** Kaggle Notebooks
+- **Hardware:** NVIDIA GPU (Tesla T4 in the recorded run)
+
+## Repository Structure
+
+```text
+bert-sarcasm-aware-sentiment-analysis/
+│
+├── README.md
+├── sentiment-analysis-bert-multitask.ipynb
+├── requirements.txt
+├── .gitignore
+│
+└── screenshots/
+    ├── baseline-results.png
+    └── multitask-results.png
 ```
-Input:     "I just love being ignored."
-Sentiment: Positive  ← incorrect (sarcasm missed)
 
-Input:     "Best day ever... not."
-Sentiment: Positive  ← incorrect (negation missed)
-```
+## Installation and Execution
 
-### Phase 2 — Multi-Task Model
+The notebook was developed and executed in Kaggle.
 
-```
-Input:     "I just love being ignored."
-Sentiment: Negative
-Sarcasm:   Sarcastic  ✓
+### 1. Clone the repository
 
-Input:     "I absolutely love waiting in traffic."
-Sentiment: Negative
-Sarcasm:   Sarcastic  ✓
-
-Input:     "This is the best day of my life."
-Sentiment: Positive
-Sarcasm:   Not Sarcastic  ✓
-```
-
----
-
-## How to Run
-
-This project runs as a Jupyter notebook on Google Colab with a GPU runtime.
-
-1. Open the notebook in [Google Colab](https://colab.research.google.com/)
-2. Set runtime to **GPU** (Runtime → Change runtime type → T4 GPU)
-3. Run all cells sequentially
-4. Phase 1 and Phase 2 are self-contained — you can run either independently
-
-> **Note:** The full training pipeline (~230,000 rows, 3 epochs) takes approximately 2–3 hours on a T4 GPU. To test quickly, reduce `balanced_df` to a smaller sample before building the DataLoaders.
-
----
-
-## Limitations
-
-- **Cross-domain sarcasm:** The sarcasm head was trained on news headlines and tweets. Performance on conversational sarcasm from other domains (e.g. Reddit, product reviews) is likely to degrade.
-- **Binary sentiment only:** The model classifies Positive/Negative and does not handle neutral or fine-grained emotion.
-- **Label proxy for sarcasm→sentiment:** Sarcastic examples were assigned an inverted sentiment label as a proxy (sarcastic = negative sentiment). This is a simplification and may introduce label noise.
-- **No cross-lingual support:** The model is English-only.
-
----
-
-## Future Improvements
-
-- Deploy as a REST API using FastAPI or Streamlit
-- Experiment with `roberta-base` or `distilbert-base-cased` for speed/accuracy tradeoffs
-- Fine-tune on Reddit or product review sarcasm data for better cross-domain generalisation
-- Add neutral sentiment class
-- Convert notebook into a modular ML pipeline with separate `train.py`, `evaluate.py`, and `predict.py` scripts
-
----
-
-## Reproducibility
-
-All experiments were run on Google Colab with a T4 GPU.
-
-**To reproduce:**
-
-1. Open the notebook in Colab and set runtime to GPU
-2. Install dependencies:
 ```bash
-   pip install transformers torch scikit-learn pandas datasets
+git clone https://github.com/YOUR_USERNAME/bert-sarcasm-aware-sentiment-analysis.git
+
+cd bert-sarcasm-aware-sentiment-analysis
 ```
-3. Run all cells sequentially — Phase 1 and Phase 2 are self-contained
 
-**Seeds used:**
-- `random_state=42` in all `train_test_split` and `resample` calls (data splitting and upsampling)
-- `df.sample(100_000, random_state=42)` for Sentiment140 sampling
+### 2. Install dependencies
 
-**Note:** `torch.manual_seed()` is not set in this project, so minor variation in training loss across GPU runs is expected.
+```bash
+pip install -r requirements.txt
+```
 
-notebooks/
-src/
-models/
-data/
+### 3. Open the notebook
+
+Import `sentiment-analysis-bert-multitask.ipynb` into Kaggle Notebooks.
+
+### 4. Configure the dataset
+
+Attach the Sentiment140 dataset used in the notebook:
+
+`krishbaisoya/tweets-sentiment-analysis`
+
+The notebook currently references a Kaggle input path. If your attached dataset uses a different path, update `train_path` accordingly.
+
+The Sarcasm News Headlines and TweetEval datasets are loaded through Hugging Face Datasets.
+
+### 5. Enable GPU acceleration
+
+In Kaggle Notebook settings, select a GPU accelerator.
+
+### 6. Execute the notebook
+
+Run the cells sequentially to train and evaluate the baseline and multi-task models.
+
+## Limitations and Future Improvements
+
+- Evaluate performance across multiple random seeds.
+- Introduce confidence intervals and statistical significance testing.
+- Investigate cross-domain generalisation between news headlines and conversational text.
+- Explore additional datasets containing contemporary slang, sarcasm and irony.
+- Experiment with alternative transformer architectures.
+- Investigate more advanced contrastive learning strategies.
 
 ## Author
 
 **Tania Marietta Anto**  
-MSc in Artificial Intelligence — Dublin Business School  
-BA in Computer Applications  
+M.Sc. Artificial Intelligence  
+Dublin Business School
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-blue)](https://www.linkedin.com/in/tania-marietta-277344301/)  
-📧 taniamarietta16@gmail.com
+---
+
+This project was completed as part of my MSc Artificial Intelligence dissertation.
+
+**Supervisor:** Dr. David Williams
